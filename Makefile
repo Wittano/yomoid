@@ -1,0 +1,6 @@
+staticcheck:
+	go tool staticcheck ./...
+	go vet ./...
+
+run: vet
+	go run main.go

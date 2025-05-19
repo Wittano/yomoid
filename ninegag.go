@@ -19,7 +19,7 @@ func nineGagMessageFixer(s *discordgo.Session, m *discordgo.MessageCreate) {
 	logger := createDiscordHandlerLogger(ctx, *m.Message)
 
 	words := strings.Split(m.Message.Content, " ")
-	if len(words) == 0 {
+	if len(words) == 0 && hasNineGagLink(words) {
 		logger.WarnContext(ctx, "missing links from 9gag's form to fixing")
 		return
 	}
@@ -46,6 +46,16 @@ func nineGagMessageFixer(s *discordgo.Session, m *discordgo.MessageCreate) {
 			logger.Error("failed send 9gag fixed links message", "error", err)
 		}
 	}
+}
+
+func hasNineGagLink(words []string) bool {
+	for _, link := range words {
+		if nineGagRegex.MatchString(link) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func fixNinegagLink(link string) (string, bool) {

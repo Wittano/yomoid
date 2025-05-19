@@ -63,3 +63,4 @@ tags
 result
 result-*
 .idea/**
+/gen/

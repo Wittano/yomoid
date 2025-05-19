@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"github.com/bwmarrin/discordgo"
 	"io"
 	"log"
@@ -23,14 +24,24 @@ func main() {
 		log.Fatal("Missing required environment variable: DISCORD_TOKEN")
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	var err error
+	if err = InitDb(ctx); err != nil {
+		slog.ErrorContext(ctx, "failed init database", "error", err)
+		os.Exit(1)
+	}
+
 	bot, err = discordgo.New("Bot " + token)
 	if err != nil {
-		log.Fatal(err)
+		slog.ErrorContext(ctx, "failed create discord session", "error", err)
+		os.Exit(1)
 	}
 	defer closeAndLog(bot)
 
 	bot.AddHandler(nineGagMessageFixer)
+	bot.AddHandler(createPollFromMessage)
 	bot.AddHandler(ready)
 
 	bot.Identify.Intents = discordgo.IntentMessageContent | discordgo.IntentGuildMessages

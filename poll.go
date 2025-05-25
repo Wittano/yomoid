@@ -2,90 +2,39 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/bwmarrin/discordgo"
 	"github.com/jackc/pgx/v5"
 	"github.com/wittano/yomoid/gen/database"
-	"log/slog"
 	"math"
 	"time"
 )
 
-type pollMediaObject struct {
-	Text  string `json:"text"`
-	Emoji *struct {
-		Name string `json:"name"`
-		Id   string `json:"id"`
-	} `json:"emoji"`
-}
+func createPollFromMessage(_ *discordgo.Session, m *discordgo.MessageCreate) {
+	if m.Poll.Question.Text == "" || len(m.Poll.Answers) == 0 {
+		return
+	}
 
-type discordPoll struct {
-	Question   pollMediaObject `json:"question"`
-	LayoutType int             `json:"layout_type"`
-	Expiry     time.Time       `json:"expiry"`
-	Answers    []struct {
-		PollMedia pollMediaObject `json:"poll_media"`
-		AnswerId  int             `json:"answer_id"`
-	} `json:"answers"`
-	AllowMultiselect bool `json:"allow_multiselect"`
-}
-
-func (p discordPoll) IsValid() bool {
-	return p.Question.Text != "" && len(p.Answers) > 0
-}
-
-type pollCreateMessage struct {
-	GuildID   string         `json:"guild_id"`
-	Author    discordgo.User `json:"author"`
-	ChannelId string         `json:"channel_id"`
-	Poll      discordPoll    `json:"poll"`
-	ID        string         `json:"id"`
-}
-
-var (
-	errInvalidPollMessageType = errors.New("poll: event type is not MESSAGE_CREATE")
-	errEventMissing           = errors.New("poll: event is nil")
-	errPollMising             = errors.New("poll: discord poll data is nil")
-)
-
-func createPollFromMessage(_ *discordgo.Session, e *discordgo.Event) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	msg, err := parsePollMessage(e)
-	if errors.Is(err, errEventMissing) || errors.Is(err, errInvalidPollMessageType) || errors.Is(err, errPollMising) {
-		return
-	} else if err != nil {
-		slog.Error("failed parse poll message", "error", err)
-		return
-	}
+	logger := createDiscordHandlerLogger(ctx, *m.Message).
+		With("pollName", m.Poll.Question.Text)
+	LogDiscordMessage(ctx, logger, *m.Message)
 
-	logger := createDiscordHandlerLogger(ctx, discordgo.Message{
-		GuildID:   msg.GuildID,
-		ChannelID: msg.ChannelId,
-		Author:    &msg.Author,
-		ID:        msg.ID,
-	})
+	logger.InfoContext(ctx, "PollMessageCreate handler received a new poll")
 
-	pollId, err := createPoll(ctx, msg)
+	pollId, err := createPoll(ctx, *m)
 	if err != nil {
-		logger.Error("failed create a new poll",
-			"pollName", msg.Poll.Question.Text,
-			"error", err)
+		logger.Error("failed create a new poll", "error", err)
 		return
 	}
 
-	logger.Info("poll created a new poll", "pollName", msg.Poll.Question.Text, "pollId", pollId)
+	logger.Info("poll created a new poll", "pollId", pollId)
 }
 
-func createPoll(ctx context.Context, msg pollCreateMessage) (int64, error) {
-	duration := math.Ceil(msg.Poll.Expiry.Sub(time.Now()).Hours())
-	if duration == 0 {
-		duration = 24
-	}
-
+func createPoll(ctx context.Context, msg discordgo.MessageCreate) (int64, error) {
 	tx, err := Poll.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return 0, err
@@ -97,6 +46,45 @@ func createPoll(ctx context.Context, msg pollCreateMessage) (int64, error) {
 	}()
 
 	query := database.New(tx)
+	pollID, err := createPollEntity(ctx, query, msg)
+	if err != nil {
+		return 0, err
+	}
+
+	if err = assignPollOptions(ctx, query, pollID, msg); err != nil {
+		return 0, err
+	}
+
+	return pollID, tx.Commit(ctx)
+}
+
+func assignPollOptions(ctx context.Context, q *database.Queries, pollID int64, msg discordgo.MessageCreate) error {
+	for i, a := range msg.Poll.Answers {
+		var question database.CreatePollOptionParams
+
+		if a.Media.Text == "" {
+			return fmt.Errorf("poll: answer #%d is empty", i+1)
+		}
+
+		if a.Media.Emoji != nil {
+			question.Emoji = ParseString(a.Media.Emoji.Name)
+		}
+		question.Answer = a.Media.Text
+		question.PollID = pollID
+
+		if err := q.CreatePollOption(ctx, question); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func createPollEntity(ctx context.Context, q *database.Queries, msg discordgo.MessageCreate) (int64, error) {
+	duration := math.Ceil(msg.Poll.Expiry.Sub(time.Now()).Hours())
+	if duration == 0 {
+		duration = 24
+	}
 
 	poll := database.CreatePollParams{
 		GuildID:  msg.GuildID,
@@ -106,48 +94,5 @@ func createPoll(ctx context.Context, msg pollCreateMessage) (int64, error) {
 		Question: msg.Poll.Question.Text,
 	}
 
-	pollId, err := query.CreatePoll(ctx, poll)
-	if err != nil {
-		err = errors.Join(err, tx.Rollback(ctx))
-		return 0, err
-	}
-
-	questions := make([]database.CreatePollOptionParams, len(msg.Poll.Answers))
-	for i, a := range msg.Poll.Answers {
-		if a.PollMedia.Text == "" {
-			return 0, fmt.Errorf("poll: answer #%d is empty", i+1)
-		}
-
-		if a.PollMedia.Emoji != nil {
-			questions[i].Emoji = ParseString(a.PollMedia.Emoji.Name)
-		}
-		questions[i].Answer = a.PollMedia.Text
-		questions[i].PollID = pollId
-
-		if err = query.CreatePollOption(ctx, questions[i]); err != nil {
-			err = errors.Join(err, tx.Rollback(ctx))
-			return 0, err
-		}
-	}
-
-	return pollId, tx.Commit(ctx)
-}
-
-func parsePollMessage(e *discordgo.Event) (msg pollCreateMessage, err error) {
-	if e == nil {
-		err = errEventMissing
-		return
-	}
-	if e.Type != "MESSAGE_CREATE" {
-		err = errInvalidPollMessageType
-		return
-	}
-
-	err = json.Unmarshal(e.RawData, &msg)
-	if !msg.Poll.IsValid() && err == nil {
-		err = errPollMising
-		return
-	}
-
-	return
+	return q.CreatePoll(ctx, poll)
 }

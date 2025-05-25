@@ -3,7 +3,7 @@ module github.com/wittano/yomoid
 go 1.24
 
 require (
-	github.com/bwmarrin/discordgo v0.28.1
+	github.com/bwmarrin/discordgo v0.29.0
 	github.com/go-faster/errors v0.7.1
 	github.com/jackc/pgx/v5 v5.7.5
 )

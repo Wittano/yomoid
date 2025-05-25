@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"flag"
 	"github.com/bwmarrin/discordgo"
 	"io"
 	"log"
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 )
 
 func closeAndLog(closer io.Closer) {
@@ -16,12 +18,24 @@ func closeAndLog(closer io.Closer) {
 	}
 }
 
-var bot *discordgo.Session
+var (
+	level   = flag.String("level", "", "Log level")
+	verbose = flag.Bool("verbose", false, "Verbose mode")
+
+	bot *discordgo.Session
+)
+
+func init() {
+	flag.Parse()
+}
 
 func main() {
+	slog.SetLogLoggerLevel(parseLogLevel())
+
 	token, ok := os.LookupEnv("DISCORD_TOKEN")
 	if !ok {
-		log.Fatal("Missing required environment variable: DISCORD_TOKEN")
+		slog.Error("Missing required environment variable: DISCORD_TOKEN")
+		os.Exit(1)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -53,6 +67,33 @@ func main() {
 	closeCh := make(chan os.Signal, 1)
 	signal.Notify(closeCh, os.Interrupt)
 	<-closeCh
+}
+
+func IsVerbose() bool {
+	return verbose != nil && *verbose
+}
+
+func parseLogLevel() slog.Level {
+	if verbose != nil && *verbose {
+		return slog.LevelDebug
+	}
+
+	if level == nil {
+		return slog.LevelInfo
+	}
+
+	switch strings.ToUpper(*level) {
+	case "DEBUG":
+		return slog.LevelDebug
+	case "INFO":
+		return slog.LevelInfo
+	case "WARN":
+		return slog.LevelWarn
+	case "ERROR":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
 }
 
 func ready(_ *discordgo.Session, _ *discordgo.Ready) {

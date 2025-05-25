@@ -10,20 +10,18 @@ import (
 
 var Poll *pgxpool.Pool
 
-func InitDb(ctx context.Context) error {
+func InitDb(ctx context.Context) (err error) {
 	url, ok := os.LookupEnv("DATABASE_URL")
 	if url != "" && !ok {
 		return errors.New("database: Database URL is not set. Please set DATABASE_URL environment variable.")
 	}
 
-	var err error
 	Poll, err = pgxpool.New(ctx, url)
-
-	return err
+	return
 }
 
 func ParseString(s string) (p pgtype.Text) {
 	p.Valid = len(s) > 0
-	p.String = string(s)
+	p.String = s
 	return
 }

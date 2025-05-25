@@ -6,4 +6,4 @@ sqlc:
 	go tool sqlc -f ./database/sqlc.yml generate
 
 run: sqlc staticcheck
-	go run main.go
+	go run main.go --verbose --level DEBUG

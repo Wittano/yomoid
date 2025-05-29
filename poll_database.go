@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"github.com/bwmarrin/discordgo"
 	"math"
 	"time"
@@ -11,7 +12,7 @@ type PollMessageCreateHandler struct {
 	db DatabaseQueries
 }
 
-func (p PollMessageCreateHandler) Handler(_ *discordgo.Session, m *discordgo.MessageCreate) {
+func (p PollMessageCreateHandler) Handler(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if m.Poll == nil || m.Poll.Question.Text == "" || len(m.Poll.Answers) == 0 {
 		return
 	}
@@ -31,6 +32,19 @@ func (p PollMessageCreateHandler) Handler(_ *discordgo.Session, m *discordgo.Mes
 	}
 
 	logger.Info("poll created a new poll", "pollId", pollId)
+
+	if _, err = s.ChannelMessageSendComplex(m.ChannelID, &discordgo.MessageSend{
+		Flags: discordgo.MessageFlagsEphemeral,
+		Reference: &discordgo.MessageReference{
+			Type:      discordgo.MessageReferenceTypeDefault,
+			MessageID: m.ID,
+			GuildID:   m.GuildID,
+			ChannelID: m.ChannelID,
+		},
+		Content: fmt.Sprintf("I saved your poll %s. Poll's id is `%d`", m.Poll.Question.Text, pollId),
+	}); err != nil {
+		logger.ErrorContext(ctx, "failed response for creating a new poll in database", "error", err)
+	}
 }
 
 func createPoll(msg discordgo.MessageCreate) (poll CreatePollParams) {

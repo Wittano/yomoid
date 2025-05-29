@@ -192,7 +192,7 @@ func NewDatabase(ctx context.Context) (*Database, error) {
 	}
 
 	if err = db.poll.Ping(ctx); err != nil {
-		err = errors.Join(err, errors.New("database: failed to ping database"))
+		err = errors.Join(errors.New("database: failed to ping database"), err)
 	}
 
 	return db, err

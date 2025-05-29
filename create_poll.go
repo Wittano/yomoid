@@ -48,7 +48,7 @@ func (p PollMessageCreateHandler) Handler(s *discordgo.Session, m *discordgo.Mes
 }
 
 func createPoll(msg discordgo.MessageCreate) (poll CreatePollParams) {
-	duration := math.Ceil(msg.Poll.Expiry.Sub(time.Now()).Hours())
+	duration := math.Ceil(time.Until(*msg.Poll.Expiry).Hours())
 	if duration == 0 {
 		duration = 24
 	}

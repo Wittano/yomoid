@@ -19,7 +19,7 @@ var client = http.Client{
 	Timeout: time.Second * 5,
 }
 
-var onlyPngUrlRegex = regexp.MustCompile("\\.[a-z]{3,4}\\?")
+var onlyPngUrlRegex = regexp.MustCompile(`\\.[a-z]{3,4}\\?`)
 
 func downloadImage(url string) (io.ReadCloser, error) {
 	url = onlyPngUrlRegex.ReplaceAllString(url, ".png?")

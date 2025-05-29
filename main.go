@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"time"
 )
 
 func closeAndLog(closer io.Closer) {
@@ -25,11 +26,9 @@ var (
 	bot *discordgo.Session
 )
 
-func init() {
-	flag.Parse()
-}
-
 func main() {
+	flag.Parse()
+
 	slog.SetLogLoggerLevel(parseLogLevel())
 
 	token, ok := os.LookupEnv("DISCORD_TOKEN")
@@ -38,11 +37,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	var err error
-	if err = InitDb(ctx); err != nil {
+	ctx, dbCancel := context.WithTimeout(context.Background(), time.Second)
+	defer dbCancel()
+	db, err := NewDatabase(ctx)
+	if err != nil {
 		slog.ErrorContext(ctx, "failed init database", "error", err)
 		os.Exit(1)
 	}
@@ -54,9 +52,14 @@ func main() {
 	}
 	defer closeAndLog(bot)
 
-	bot.AddHandler(nineGagMessageFixer)
-	bot.AddHandler(createPollFromMessage)
-	bot.AddHandler(ready)
+	initSlashCommandList(db)
+
+	pollHandler := PollMessageCreateHandler{db}
+
+	bot.AddHandlerOnce(nineGagMessageFixer)
+	bot.AddHandlerOnce(pollHandler.Handler)
+	bot.AddHandlerOnce(handleSlashCommand)
+	bot.AddHandlerOnce(ready)
 
 	bot.Identify.Intents = discordgo.IntentMessageContent | discordgo.IntentGuildMessages
 

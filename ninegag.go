@@ -16,7 +16,7 @@ func nineGagMessageFixer(s *discordgo.Session, m *discordgo.MessageCreate) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	logger := createDiscordHandlerLogger(ctx, *m.Message)
+	logger := createLoggerFromMessage(ctx, *m.Message)
 
 	words := strings.Split(m.Message.Content, " ")
 	if len(words) == 0 && hasNineGagLink(words) {

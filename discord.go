@@ -99,3 +99,13 @@ func parseInteractionInput(i discordgo.Interaction) (in map[string]any) {
 
 	return
 }
+
+func CreateSimpleDiscordResponse(msg string) *discordgo.InteractionResponse {
+	return &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: msg,
+			Flags:   discordgo.MessageFlagsEphemeral,
+		},
+	}
+}

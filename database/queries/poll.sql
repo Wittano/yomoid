@@ -53,3 +53,13 @@ where p.question ilike concat('%', $1 :: text, '%')
   and p.id = $2
   and p.guild_id = $3
 group by p.id;
+
+-- name: DeletePoll :exec
+delete
+from poll
+where id = $1;
+
+-- name: DeletePollOptions :exec
+delete
+from poll_option
+where poll_id = $1;

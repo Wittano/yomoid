@@ -26,10 +26,29 @@ type DatabaseQueries interface {
 	FindPoll(ctx context.Context, guildID string, id int64, title string) (Poll, error)
 	FindAllPoll(ctx context.Context, guildID string, title string, page uint) ([]Poll, error)
 	CreatePoll(ctx context.Context, params CreatePollParams) (int64, error)
+	DeletePoll(ctx context.Context, id int64) error
 }
 
 type Database struct {
 	poll *pgxpool.Pool
+}
+
+func (d Database) DeletePoll(ctx context.Context, id int64) error {
+	tx, err := d.poll.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, tx.Rollback(ctx))
+		} else {
+			err = tx.Commit(ctx)
+		}
+	}()
+
+	q := database.New(tx)
+	return errors.Join(q.DeletePollOptions(ctx, id), q.DeletePoll(ctx, id))
+
 }
 
 func (d Database) FindAllPoll(ctx context.Context, guildID string, title string, page uint) ([]Poll, error) {

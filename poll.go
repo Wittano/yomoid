@@ -15,6 +15,7 @@ type PollCommand map[string]DiscordSlashCommandHandler
 const (
 	pollDetailsCommandName = "details"
 	pollListCommandName    = "list"
+	pollRemoveCommandName  = "remove"
 )
 
 func (p PollCommand) HandleSlashCommand(ctx context.Context, l *slog.Logger, s *discordgo.Session, i *discordgo.InteractionCreate) (*discordgo.InteractionResponse, error) {
@@ -30,6 +31,7 @@ func NewPollCommand(db DatabaseQueries) PollCommand {
 	return map[string]DiscordSlashCommandHandler{
 		pollDetailsCommandName: PollDetailsCommand{Db: db},
 		pollListCommandName:    PollListCommand{Db: db},
+		pollRemoveCommandName:  PollRemoveCommand{Db: db},
 	}
 }
 
@@ -50,12 +52,7 @@ func (p PollListCommand) HandleSlashCommand(ctx context.Context, l *slog.Logger,
 	if err != nil && !errors.Is(err, context.DeadlineExceeded) {
 		return nil, err
 	} else if len(polls) == 0 {
-		return &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{
-				Content: "No found any poll with title: " + title,
-			},
-		}, nil
+		return CreateSimpleDiscordResponse("No found any poll with title: " + title), nil
 	}
 
 	return createPollDetails(ctx, nil, polls...), nil
@@ -160,6 +157,33 @@ func createPollDetails(ctx context.Context, user *discordgo.User, p ...Poll) *di
 	}
 }
 
+type PollRemoveCommand struct {
+	Db DatabaseQueries
+}
+
+func (p PollRemoveCommand) HandleSlashCommand(ctx context.Context, l *slog.Logger, s *discordgo.Session, i *discordgo.InteractionCreate) (*discordgo.InteractionResponse, error) {
+	var id int64
+
+	rawId, ok := parseInteractionInput(*i.Interaction)["id"]
+	if !ok {
+		return nil, fmt.Errorf("poll: missing id argument")
+	} else {
+		id = int64(rawId.(float64))
+	}
+
+	if err := p.Db.DeletePoll(ctx, id); err != nil {
+		return nil, DiscordMessageErr{
+			error:       err,
+			CommandName: "remove",
+			Msg:         "Invalid poll ID",
+		}
+	}
+
+	l.InfoContext(ctx, "poll removed", "pollID", id)
+
+	return CreateSimpleDiscordResponse("Poll removed"), nil
+}
+
 func CreatePollDetailsCommand() *discordgo.ApplicationCommand {
 	return &discordgo.ApplicationCommand{
 		Name:        "poll",
@@ -191,12 +215,26 @@ func CreatePollDetailsCommand() *discordgo.ApplicationCommand {
 					{
 						Type:        discordgo.ApplicationCommandOptionString,
 						Name:        "title",
+						Required:    true,
 						Description: "Find polls by specific name",
 					},
 					{
 						Type:        discordgo.ApplicationCommandOptionInteger,
 						Name:        "page",
 						Description: "Page number",
+					},
+				},
+			},
+			{
+				Type:        discordgo.ApplicationCommandOptionSubCommand,
+				Name:        pollRemoveCommandName,
+				Description: "Remove poll by id",
+				Options: []*discordgo.ApplicationCommandOption{
+					{
+						Type:        discordgo.ApplicationCommandOptionInteger,
+						Name:        "id",
+						Required:    true,
+						Description: "Poll's ID",
 					},
 				},
 			},

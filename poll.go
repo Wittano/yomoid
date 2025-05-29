@@ -14,21 +14,51 @@ type PollCommand map[string]DiscordSlashCommandHandler
 
 const (
 	pollDetailsCommandName = "details"
+	pollListCommandName    = "list"
 )
 
-func (p PollCommand) HandleSlashCommand(ctx context.Context, l *slog.Logger, s *discordgo.Session, m *discordgo.InteractionCreate) (*discordgo.InteractionResponse, error) {
-	handler, ok := p[m.ApplicationCommandData().Options[0].Name]
+func (p PollCommand) HandleSlashCommand(ctx context.Context, l *slog.Logger, s *discordgo.Session, i *discordgo.InteractionCreate) (*discordgo.InteractionResponse, error) {
+	handler, ok := p[i.ApplicationCommandData().Options[0].Name]
 	if !ok {
-		return nil, fmt.Errorf("poll: unknown option %q", m.ApplicationCommandData().Options[0].Name)
+		return nil, fmt.Errorf("poll: unknown option %q", i.ApplicationCommandData().Options[0].Name)
 	}
 
-	return handler.HandleSlashCommand(ctx, l, s, m)
+	return handler.HandleSlashCommand(ctx, l, s, i)
 }
 
 func NewPollCommand(db DatabaseQueries) PollCommand {
 	return map[string]DiscordSlashCommandHandler{
 		pollDetailsCommandName: PollDetailsCommand{Db: db},
+		pollListCommandName:    PollListCommand{Db: db},
 	}
+}
+
+type PollListCommand struct {
+	Db DatabaseQueries
+}
+
+func (p PollListCommand) HandleSlashCommand(ctx context.Context, l *slog.Logger, s *discordgo.Session, i *discordgo.InteractionCreate) (*discordgo.InteractionResponse, error) {
+	var title string
+
+	if rawTitle, ok := parseInteractionInput(*i.Interaction)["title"]; !ok && (rawTitle != nil) {
+		return nil, fmt.Errorf("poll: missing title argument")
+	} else {
+		title = rawTitle.(string)
+	}
+
+	polls, err := p.Db.FindAllPoll(ctx, i.GuildID, title, 0)
+	if err != nil && !errors.Is(err, context.DeadlineExceeded) {
+		return nil, err
+	} else if len(polls) == 0 {
+		return &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "No found any poll with title: " + title,
+			},
+		}, nil
+	}
+
+	return createPollDetails(ctx, nil, polls...), nil
 }
 
 type PollDetailsCommand struct {
@@ -82,7 +112,7 @@ func findIdAndTitleInInteractionArgs(i discordgo.Interaction) (id int64, title s
 	return
 }
 
-func createPollDetails(ctx context.Context, user *discordgo.User, p Poll) *discordgo.InteractionResponse {
+func createPollDetails(ctx context.Context, user *discordgo.User, p ...Poll) *discordgo.InteractionResponse {
 	var (
 		author discordgo.MessageEmbedAuthor
 		color  uint32
@@ -103,25 +133,29 @@ func createPollDetails(ctx context.Context, user *discordgo.User, p Poll) *disco
 		}
 	}
 
-	for i, opt := range p.Options {
-		p.Options[i] = fmt.Sprintf(" - %s", opt)
+	pollCount := min(len(p), 10)
+	embeds := make([]*discordgo.MessageEmbed, pollCount)
+	for i, poll := range p[:pollCount] {
+		for j, opt := range poll.Options {
+			poll.Options[j] = fmt.Sprintf(" - %s", opt)
+		}
+
+		embeds[i] = &discordgo.MessageEmbed{
+			Author:      &author,
+			Color:       int(color),
+			Title:       fmt.Sprintf("Poll **#%d**", poll.ID),
+			Description: fmt.Sprintf("**Question**: %s\n**Duration**: %s\n**Options**:\n%s", poll.Question, time.Duration(int64(poll.Duration)*int64(time.Hour)), strings.Join(poll.Options, "\n")),
+			Footer: &discordgo.MessageEmbedFooter{
+				Text: fmt.Sprintf("Created at: %s", poll.CreatedAt.Time.Format(time.RFC822)),
+			},
+		}
 	}
 
 	return &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
-			Embeds: []*discordgo.MessageEmbed{
-				{
-					Author:      &author,
-					Color:       int(color),
-					Title:       fmt.Sprintf("Poll **#%d**", p.ID),
-					Description: fmt.Sprintf("**Question**: %s\n**Duration**: %s\n**Options**:\n%s", p.Question, time.Duration(int64(p.Duration)*int64(time.Hour)), strings.Join(p.Options, "\n")),
-					Footer: &discordgo.MessageEmbedFooter{
-						Text: fmt.Sprintf("Created at: %s", p.CreatedAt.Time.Format(time.RFC822)),
-					},
-				},
-			},
-			Flags: discordgo.MessageFlagsEphemeral,
+			Embeds: embeds,
+			Flags:  discordgo.MessageFlagsEphemeral,
 		},
 	}
 }
@@ -134,7 +168,7 @@ func CreatePollDetailsCommand() *discordgo.ApplicationCommand {
 		Options: []*discordgo.ApplicationCommandOption{
 			{
 				Type:        discordgo.ApplicationCommandOptionSubCommand,
-				Name:        "details",
+				Name:        pollDetailsCommandName,
 				Description: "Show poll details",
 				Options: []*discordgo.ApplicationCommandOption{
 					{
@@ -146,6 +180,23 @@ func CreatePollDetailsCommand() *discordgo.ApplicationCommand {
 						Type:        discordgo.ApplicationCommandOptionString,
 						Name:        "title",
 						Description: "Find first Poll by specific name",
+					},
+				},
+			},
+			{
+				Type:        discordgo.ApplicationCommandOptionSubCommand,
+				Name:        pollListCommandName,
+				Description: "Show details of specific poll by question",
+				Options: []*discordgo.ApplicationCommandOption{
+					{
+						Type:        discordgo.ApplicationCommandOptionString,
+						Name:        "title",
+						Description: "Find polls by specific name",
+					},
+					{
+						Type:        discordgo.ApplicationCommandOptionInteger,
+						Name:        "page",
+						Description: "Page number",
 					},
 				},
 			},

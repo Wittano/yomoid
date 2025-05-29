@@ -56,10 +56,10 @@ func main() {
 
 	pollHandler := PollMessageCreateHandler{db}
 
-	bot.AddHandlerOnce(nineGagMessageFixer)
-	bot.AddHandlerOnce(pollHandler.Handler)
-	bot.AddHandlerOnce(handleSlashCommand)
-	bot.AddHandlerOnce(ready)
+	bot.AddHandler(nineGagMessageFixer)
+	bot.AddHandler(pollHandler.Handler)
+	bot.AddHandler(handleSlashCommand)
+	bot.AddHandler(ready)
 
 	bot.Identify.Intents = discordgo.IntentMessageContent | discordgo.IntentGuildMessages
 

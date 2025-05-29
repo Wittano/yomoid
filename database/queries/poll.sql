@@ -22,7 +22,7 @@ where p.id = $1
   and p.guild_id = $2
 group by p.id;
 
--- name: FindPollByQuestion :one
+-- name: FindPollByQuestion :many
 select p.id,
        p.question,
        p.guild_id,
@@ -35,7 +35,8 @@ from poll p
          left join poll_option po on p.id = po.poll_id
 where p.question ilike concat('%', $1 :: text, '%')
   and p.guild_id = $2
-group by p.id;
+group by p.id
+offset $3 limit 10;
 
 -- name: FindPollByIdAndQuestion :one
 select p.id,

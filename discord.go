@@ -11,7 +11,7 @@ import (
 )
 
 type DiscordSlashCommandHandler interface {
-	HandleSlashCommand(ctx context.Context, l *slog.Logger, s *discordgo.Session, m *discordgo.InteractionCreate) (*discordgo.InteractionResponse, error)
+	HandleSlashCommand(ctx context.Context, l *slog.Logger, s *discordgo.Session, i *discordgo.InteractionCreate) (*discordgo.InteractionResponse, error)
 }
 
 type DiscordMessageErr struct {

@@ -24,12 +24,36 @@ type Poll struct {
 
 type DatabaseQueries interface {
 	FindPoll(ctx context.Context, guildID string, id int64, title string) (Poll, error)
+	FindAllPoll(ctx context.Context, guildID string, title string, page uint) ([]Poll, error)
 	CreatePoll(ctx context.Context, params CreatePollParams) (int64, error)
 }
 
 type Database struct {
 	poll *pgxpool.Pool
 }
+
+func (d Database) FindAllPoll(ctx context.Context, guildID string, title string, page uint) ([]Poll, error) {
+	q := database.New(d.poll)
+	data, err := q.FindPollByQuestion(ctx, database.FindPollByQuestionParams{Column1: title, GuildID: guildID, Offset: int32(page * 10)})
+	if err != nil {
+		return nil, err
+	}
+
+	polls := make([]Poll, len(data))
+	for i, p := range data {
+		select {
+		case <-ctx.Done():
+			return nil, errors.Join(ctx.Err(), context.Canceled)
+		default:
+		}
+
+		polls[i] = createPollData(p)
+	}
+
+	return polls, nil
+}
+
+var ErrPollNotFound = errors.New("database: poll not found")
 
 func (d Database) FindPoll(ctx context.Context, guildID string, id int64, title string) (poll Poll, err error) {
 	if id > 0 && title != "" {
@@ -65,26 +89,33 @@ func (d Database) FindPoll(ctx context.Context, guildID string, id int64, title 
 			Options:   p.Options,
 		}
 	} else if title != "" {
-		var p database.FindPollByQuestionRow
+		var p []database.FindPollByQuestionRow
 		p, err = database.New(d.poll).FindPollByQuestion(ctx, database.FindPollByQuestionParams{Column1: title, GuildID: guildID})
 		if err != nil {
 			return
+		} else if len(p) == 0 {
+			err = ErrPollNotFound
+			return
 		}
-		poll = Poll{
-			ID:        p.ID,
-			Question:  p.Question,
-			GuildID:   p.GuildID,
-			AuthorID:  p.AuthorID,
-			IsMulti:   p.IsMulti,
-			Duration:  p.Duration,
-			CreatedAt: p.CreatedAt,
-			Options:   p.Options,
-		}
+		poll = createPollData(p[0])
 	} else {
-		return poll, errors.New("database: Missing required poll id or title argument")
+		return poll, ErrPollNotFound
 	}
 
 	return
+}
+
+func createPollData(p database.FindPollByQuestionRow) Poll {
+	return Poll{
+		ID:        p.ID,
+		Question:  p.Question,
+		GuildID:   p.GuildID,
+		AuthorID:  p.AuthorID,
+		IsMulti:   p.IsMulti,
+		Duration:  p.Duration,
+		CreatedAt: p.CreatedAt,
+		Options:   p.Options,
+	}
 }
 
 type AnswerParams struct {
@@ -148,7 +179,7 @@ func (d Database) CreatePoll(ctx context.Context, params CreatePollParams) (int6
 func NewDatabase(ctx context.Context) (*Database, error) {
 	url, ok := os.LookupEnv("DATABASE_URL")
 	if url != "" && !ok {
-		return nil, errors.New("database: Database URL is not set. Please set DATABASE_URL environment variable.")
+		return nil, errors.New("database URL is not set. Please set DATABASE_URL environment variable")
 	}
 
 	var (

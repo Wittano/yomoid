@@ -9,7 +9,7 @@
     devShells.x86_64-linux.default = pkgs.mkShell {
     hardeningDisable = [ "all" ];
 
-        buildInputs = with pkgs; [go gotools nixfmt-classic gnumake];
+        buildInputs = with pkgs; [go gotools nixfmt-classic gnumake dive];
     };
   };
 }

@@ -1,0 +1,9 @@
+!*.go
+.direnv
+prod
+.envrc
+.gitignore
+.git/
+*.nix
+flake.lock
+.idea/

@@ -64,3 +64,5 @@ result
 result-*
 .idea/**
 /gen/
+bin/
+prod/

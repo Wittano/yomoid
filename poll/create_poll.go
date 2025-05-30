@@ -1,18 +1,19 @@
-package main
+package poll
 
 import (
 	"context"
 	"fmt"
 	"github.com/bwmarrin/discordgo"
+	"github.com/wittano/yomoid/logger"
 	"math"
 	"time"
 )
 
-type PollMessageCreateHandler struct {
-	db DatabaseQueries
+type MessageCreateHandler struct {
+	Db Queries
 }
 
-func (p PollMessageCreateHandler) Handler(s *discordgo.Session, m *discordgo.MessageCreate) {
+func (p MessageCreateHandler) Handler(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if m.Poll == nil || m.Poll.Question.Text == "" || len(m.Poll.Answers) == 0 {
 		return
 	}
@@ -20,22 +21,22 @@ func (p PollMessageCreateHandler) Handler(s *discordgo.Session, m *discordgo.Mes
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	if p.db.Exists(ctx, m.Poll.Question.Text, m.GuildID) {
+	if p.Db.Exists(ctx, m.Poll.Question.Text, m.GuildID) {
 		return
 	}
 
-	logger := createLoggerFromMessage(ctx, *m.Message).
+	l := logger.CreateLoggerFromMessage(ctx, s, *m.Message).
 		With("pollName", m.Poll.Question.Text)
 
-	logger.InfoContext(ctx, "PollMessageCreate handler received a new poll")
+	l.InfoContext(ctx, "PollMessageCreate handler received a new poll")
 
-	pollId, err := p.db.CreatePoll(ctx, createPoll(*m))
+	pollId, err := p.Db.CreatePoll(ctx, createPoll(*m))
 	if err != nil {
-		logger.Error("failed create a new poll", "error", err)
+		l.Error("failed create a new poll", "error", err)
 		return
 	}
 
-	logger.Info("poll created a new poll", "pollId", pollId)
+	l.Info("poll created a new poll", "pollId", pollId)
 
 	if _, err = s.ChannelMessageSendComplex(m.ChannelID, &discordgo.MessageSend{
 		Flags: discordgo.MessageFlagsEphemeral,
@@ -45,9 +46,9 @@ func (p PollMessageCreateHandler) Handler(s *discordgo.Session, m *discordgo.Mes
 			GuildID:   m.GuildID,
 			ChannelID: m.ChannelID,
 		},
-		Content: fmt.Sprintf("I saved your poll %s. Poll's id is `%d`", m.Poll.Question.Text, pollId),
+		Content: fmt.Sprintf("I saved your poll %s. Model's id is `%d`", m.Poll.Question.Text, pollId),
 	}); err != nil {
-		logger.ErrorContext(ctx, "failed response for creating a new poll in database", "error", err)
+		l.ErrorContext(ctx, "failed response for creating a new poll in database", "error", err)
 	}
 }
 

@@ -1,16 +1,17 @@
-package main
+package discord
 
 import (
 	"context"
 	"errors"
 	"fmt"
 	"github.com/bwmarrin/discordgo"
+	"github.com/wittano/yomoid/poll"
 	"log/slog"
 	"strings"
 	"time"
 )
 
-type PollCommand map[string]DiscordSlashCommandHandler
+type Command map[string]SlashCommandHandler
 
 const (
 	pollDetailsCommandName = "details"
@@ -19,7 +20,7 @@ const (
 	pollPostCommandName    = "create"
 )
 
-func (p PollCommand) HandleSlashCommand(ctx context.Context, l *slog.Logger, s *discordgo.Session, i *discordgo.InteractionCreate) (*discordgo.InteractionResponse, error) {
+func (p Command) HandleSlashCommand(ctx context.Context, l *slog.Logger, s *discordgo.Session, i *discordgo.InteractionCreate) (*discordgo.InteractionResponse, error) {
 	handler, ok := p[i.ApplicationCommandData().Options[0].Name]
 	if !ok {
 		return nil, fmt.Errorf("poll: unknown option %q", i.ApplicationCommandData().Options[0].Name)
@@ -28,12 +29,12 @@ func (p PollCommand) HandleSlashCommand(ctx context.Context, l *slog.Logger, s *
 	return handler.HandleSlashCommand(ctx, l, s, i)
 }
 
-func NewPollCommand(db DatabaseQueries, handler *PollMessageCreateHandler) PollCommand {
+func NewPollCommand(db poll.Queries, handler *poll.MessageCreateHandler) Command {
 	if handler == nil {
 		panic("poll: missing poll message create handler")
 	}
 
-	return map[string]DiscordSlashCommandHandler{
+	return map[string]SlashCommandHandler{
 		pollDetailsCommandName: PollDetailsCommand{Db: db},
 		pollListCommandName:    PollListCommand{Db: db},
 		pollRemoveCommandName:  PollRemoveCommand{Db: db},
@@ -42,8 +43,8 @@ func NewPollCommand(db DatabaseQueries, handler *PollMessageCreateHandler) PollC
 }
 
 type PollPostCommand struct {
-	Db                 DatabaseQueries
-	PollMessageHandler *PollMessageCreateHandler
+	Db                 poll.Queries
+	PollMessageHandler *poll.MessageCreateHandler
 }
 
 func (p PollPostCommand) HandleSlashCommand(ctx context.Context, l *slog.Logger, s *discordgo.Session, i *discordgo.InteractionCreate) (*discordgo.InteractionResponse, error) {
@@ -56,9 +57,9 @@ func (p PollPostCommand) HandleSlashCommand(ctx context.Context, l *slog.Logger,
 
 	l.InfoContext(ctx, "valid poll post request received", "requestPollID", pollID, "requestChannelID", textChannel.ID)
 
-	poll, err := p.Db.FindPoll(ctx, i.GuildID, pollID, "")
+	po, err := p.Db.FindPoll(ctx, i.GuildID, pollID, "")
 	if err != nil && !errors.Is(err, context.DeadlineExceeded) {
-		return nil, DiscordMessageErr{
+		return nil, MessageErr{
 			error:       err,
 			CommandName: "post",
 			Msg:         "Invalid poll ID",
@@ -67,9 +68,9 @@ func (p PollPostCommand) HandleSlashCommand(ctx context.Context, l *slog.Logger,
 		return nil, err
 	}
 
-	l.InfoContext(ctx, "poll found", "pollID", poll.ID, "pollQuestion", poll.Question)
+	l.InfoContext(ctx, "poll found", "pollID", po.ID, "pollQuestion", po.Question)
 
-	discordPoll, err := createDiscordPoll(poll)
+	discordPoll, err := createDiscordPoll(po)
 	if err != nil {
 		return nil, err
 	}
@@ -85,13 +86,13 @@ func (p PollPostCommand) HandleSlashCommand(ctx context.Context, l *slog.Logger,
 	return &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
-			Content: fmt.Sprintf("Poll #%d was created here", pollID),
+			Content: fmt.Sprintf("Model #%d was created here", pollID),
 			Flags:   discordgo.MessageFlagsEphemeral,
 		},
 	}, nil
 }
 
-func createDiscordPoll(p Poll) (dp discordgo.Poll, err error) {
+func createDiscordPoll(p poll.Model) (dp discordgo.Poll, err error) {
 	answers := make([]discordgo.PollAnswer, len(p.Options))
 	for i, opt := range p.Options {
 		var (
@@ -127,7 +128,7 @@ func createDiscordPoll(p Poll) (dp discordgo.Poll, err error) {
 }
 
 type PollListCommand struct {
-	Db DatabaseQueries
+	Db poll.Queries
 }
 
 func (p PollListCommand) HandleSlashCommand(ctx context.Context, l *slog.Logger, s *discordgo.Session, i *discordgo.InteractionCreate) (*discordgo.InteractionResponse, error) {
@@ -150,7 +151,7 @@ func (p PollListCommand) HandleSlashCommand(ctx context.Context, l *slog.Logger,
 }
 
 type PollDetailsCommand struct {
-	Db DatabaseQueries
+	Db poll.Queries
 }
 
 func (c PollDetailsCommand) HandleSlashCommand(ctx context.Context, l *slog.Logger, s *discordgo.Session, i *discordgo.InteractionCreate) (*discordgo.InteractionResponse, error) {
@@ -159,7 +160,7 @@ func (c PollDetailsCommand) HandleSlashCommand(ctx context.Context, l *slog.Logg
 	if id == 0 && title == "" {
 		l.WarnContext(ctx, "missing id or title argument in poll details subcommand")
 
-		return nil, DiscordMessageErr{
+		return nil, MessageErr{
 			Msg:         "Missing required poll id or title argument",
 			CommandName: "poll-details",
 		}
@@ -167,10 +168,10 @@ func (c PollDetailsCommand) HandleSlashCommand(ctx context.Context, l *slog.Logg
 
 	p, err := c.Db.FindPoll(ctx, i.GuildID, id, title)
 	if err != nil && !errors.Is(err, context.DeadlineExceeded) {
-		return nil, DiscordMessageErr{
+		return nil, MessageErr{
 			error:       err,
 			CommandName: "poll-details",
-			Msg:         fmt.Sprintf("Poll with id %d or title %s not found", id, title),
+			Msg:         fmt.Sprintf("Model with id %d or title %s not found", id, title),
 		}
 	} else if err != nil {
 		return nil, err
@@ -200,7 +201,7 @@ func findIdAndTitleInInteractionArgs(i discordgo.Interaction) (id int64, title s
 	return
 }
 
-func createPollDetails(ctx context.Context, user *discordgo.User, p ...Poll) *discordgo.InteractionResponse {
+func createPollDetails(ctx context.Context, user *discordgo.User, p ...poll.Model) *discordgo.InteractionResponse {
 	var (
 		author discordgo.MessageEmbedAuthor
 		color  uint32
@@ -223,18 +224,18 @@ func createPollDetails(ctx context.Context, user *discordgo.User, p ...Poll) *di
 
 	pollCount := min(len(p), 10)
 	embeds := make([]*discordgo.MessageEmbed, pollCount)
-	for i, poll := range p[:pollCount] {
-		for j, opt := range poll.Options {
-			poll.Options[j] = fmt.Sprintf(" - %s", opt)
+	for i, po := range p[:pollCount] {
+		for j, opt := range po.Options {
+			po.Options[j] = fmt.Sprintf(" - %s", opt)
 		}
 
 		embeds[i] = &discordgo.MessageEmbed{
 			Author:      &author,
 			Color:       int(color),
-			Title:       fmt.Sprintf("Poll **#%d**", poll.ID),
-			Description: fmt.Sprintf("**Question**: %s\n**Duration**: %s\n**Options**:\n%s", poll.Question, time.Duration(int64(poll.Duration)*int64(time.Hour)), strings.Join(poll.Options, "\n")),
+			Title:       fmt.Sprintf("Model **#%d**", po.ID),
+			Description: fmt.Sprintf("**Question**: %s\n**Duration**: %s\n**Options**:\n%s", po.Question, time.Duration(int64(po.Duration)*int64(time.Hour)), strings.Join(po.Options, "\n")),
 			Footer: &discordgo.MessageEmbedFooter{
-				Text: fmt.Sprintf("Created at: %s", poll.CreatedAt.Time.Format(time.RFC822)),
+				Text: fmt.Sprintf("Created at: %s", po.CreatedAt.Time.Format(time.RFC822)),
 			},
 		}
 	}
@@ -249,7 +250,7 @@ func createPollDetails(ctx context.Context, user *discordgo.User, p ...Poll) *di
 }
 
 type PollRemoveCommand struct {
-	Db DatabaseQueries
+	Db poll.Queries
 }
 
 func (p PollRemoveCommand) HandleSlashCommand(ctx context.Context, l *slog.Logger, s *discordgo.Session, i *discordgo.InteractionCreate) (*discordgo.InteractionResponse, error) {
@@ -263,7 +264,7 @@ func (p PollRemoveCommand) HandleSlashCommand(ctx context.Context, l *slog.Logge
 	}
 
 	if err := p.Db.DeletePoll(ctx, id); err != nil {
-		return nil, DiscordMessageErr{
+		return nil, MessageErr{
 			error:       err,
 			CommandName: "remove",
 			Msg:         "Invalid poll ID",
@@ -272,10 +273,10 @@ func (p PollRemoveCommand) HandleSlashCommand(ctx context.Context, l *slog.Logge
 
 	l.InfoContext(ctx, "poll removed", "pollID", id)
 
-	return CreateSimpleDiscordResponse("Poll removed"), nil
+	return CreateSimpleDiscordResponse("Model removed"), nil
 }
 
-func CreatePollDetailsCommand() *discordgo.ApplicationCommand {
+func NewPollCommandDefinition() *discordgo.ApplicationCommand {
 	return &discordgo.ApplicationCommand{
 		Name:        "poll",
 		Description: "Manage poll",
@@ -289,12 +290,12 @@ func CreatePollDetailsCommand() *discordgo.ApplicationCommand {
 					{
 						Type:        discordgo.ApplicationCommandOptionString,
 						Name:        "id",
-						Description: "Poll ID",
+						Description: "Model ID",
 					},
 					{
 						Type:        discordgo.ApplicationCommandOptionString,
 						Name:        "title",
-						Description: "Find first Poll by specific name",
+						Description: "Find first Model by specific name",
 					},
 				},
 			},
@@ -325,7 +326,7 @@ func CreatePollDetailsCommand() *discordgo.ApplicationCommand {
 						Type:        discordgo.ApplicationCommandOptionInteger,
 						Name:        "id",
 						Required:    true,
-						Description: "Poll's ID",
+						Description: "Model's ID",
 					},
 				},
 			},
@@ -338,7 +339,7 @@ func CreatePollDetailsCommand() *discordgo.ApplicationCommand {
 						Type:        discordgo.ApplicationCommandOptionInteger,
 						Name:        "id",
 						Required:    true,
-						Description: "Poll's ID",
+						Description: "Model's ID",
 					},
 					{
 						Type: discordgo.ApplicationCommandOptionChannel,

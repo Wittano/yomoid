@@ -4,6 +4,9 @@ import (
 	"context"
 	"flag"
 	"github.com/bwmarrin/discordgo"
+	"github.com/wittano/yomoid/discord"
+	"github.com/wittano/yomoid/ningegag"
+	"github.com/wittano/yomoid/poll"
 	"io"
 	"log"
 	"log/slog"
@@ -20,8 +23,7 @@ func closeAndLog(closer io.Closer) {
 }
 
 var (
-	level   = flag.String("level", "", "Log level")
-	verbose = flag.Bool("verbose", false, "Verbose mode")
+	level = flag.String("level", "", "Log level")
 
 	bot *discordgo.Session
 )
@@ -39,7 +41,7 @@ func main() {
 
 	ctx, dbCancel := context.WithTimeout(context.Background(), time.Second)
 	defer dbCancel()
-	db, err := NewDatabase(ctx)
+	db, err := poll.NewDatabase(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed init database", "error", err)
 		os.Exit(1)
@@ -52,16 +54,16 @@ func main() {
 	}
 	defer closeAndLog(bot)
 
-	pollHandler := PollMessageCreateHandler{
-		db: db,
+	pollHandler := poll.MessageCreateHandler{
+		Db: db,
 	}
 
-	initSlashCommandList(db, &pollHandler)
+	discord.InitSlashCommandList(db, &pollHandler)
 
-	bot.AddHandler(nineGagMessageFixer)
+	bot.AddHandler(ningegag.MessageFixer)
 	bot.AddHandler(pollHandler.Handler)
-	bot.AddHandler(handleSlashCommand)
-	bot.AddHandler(ready)
+	bot.AddHandler(discord.HandleSlashCommand)
+	bot.AddHandlerOnce(ready)
 
 	bot.Identify.Intents = discordgo.IntentMessageContent | discordgo.IntentGuildMessages
 
@@ -74,15 +76,11 @@ func main() {
 	<-closeCh
 }
 
-func IsVerbose() bool {
-	return verbose != nil && *verbose
+func ready(_ *discordgo.Session, _ *discordgo.Ready) {
+	slog.Info("Bot is ready. Press CTRL+C to exit.")
 }
 
 func parseLogLevel() slog.Level {
-	if verbose != nil && *verbose {
-		return slog.LevelDebug
-	}
-
 	if level == nil {
 		return slog.LevelInfo
 	}
@@ -99,8 +97,4 @@ func parseLogLevel() slog.Level {
 	default:
 		return slog.LevelInfo
 	}
-}
-
-func ready(_ *discordgo.Session, _ *discordgo.Ready) {
-	slog.Info("Bot is ready. Press CTRL+C to exit.")
 }

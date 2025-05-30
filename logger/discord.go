@@ -1,4 +1,4 @@
-package main
+package logger
 
 import (
 	"context"
@@ -11,7 +11,7 @@ var (
 	guildNameCache   = map[string]string{}
 )
 
-func createLoggerFromInteraction(ctx context.Context, i discordgo.Interaction) *slog.Logger {
+func NewLoggerFromInteraction(ctx context.Context, s *discordgo.Session, i discordgo.Interaction) *slog.Logger {
 	var (
 		user             = i.User
 		userID, username = "unknown", "unknown"
@@ -28,22 +28,18 @@ func createLoggerFromInteraction(ctx context.Context, i discordgo.Interaction) *
 		With(slog.String("channelID", i.ChannelID)).
 		With(slog.String("guildID", i.GuildID))
 
-	if !IsVerbose() {
-		return logger
-	}
-
-	logger = appendGuildNameAttr(ctx, logger, i.GuildID)
-	logger = appendChannelNameAttr(ctx, logger, i.ChannelID)
+	logger = appendGuildNameAttr(ctx, logger, s, i.GuildID)
+	logger = appendChannelNameAttr(ctx, logger, s, i.ChannelID)
 
 	return logger
 }
 
-func appendChannelNameAttr(ctx context.Context, l *slog.Logger, channelID string) *slog.Logger {
+func appendChannelNameAttr(ctx context.Context, l *slog.Logger, s *discordgo.Session, channelID string) *slog.Logger {
 	if name, ok := channelNameCache[channelID]; ok && name != "" {
 		return l.With(slog.String("channelName", name))
 	}
 
-	guild, err := bot.Guild(channelID, discordgo.WithContext(ctx))
+	guild, err := s.Guild(channelID, discordgo.WithContext(ctx))
 	if err != nil {
 		l.DebugContext(ctx, "failed fetch guild", "error", err)
 	} else {
@@ -54,12 +50,12 @@ func appendChannelNameAttr(ctx context.Context, l *slog.Logger, channelID string
 	return l
 }
 
-func appendGuildNameAttr(ctx context.Context, l *slog.Logger, guidID string) *slog.Logger {
+func appendGuildNameAttr(ctx context.Context, l *slog.Logger, s *discordgo.Session, guidID string) *slog.Logger {
 	if name, ok := guildNameCache[guidID]; ok && name != "" {
 		return l.With(slog.String("guildName", name))
 	}
 
-	guild, err := bot.Guild(guidID, discordgo.WithContext(ctx))
+	guild, err := s.Guild(guidID, discordgo.WithContext(ctx))
 	if err != nil {
 		l.DebugContext(ctx, "failed fetch guild", "error", err)
 	} else {
@@ -69,7 +65,7 @@ func appendGuildNameAttr(ctx context.Context, l *slog.Logger, guidID string) *sl
 	return l
 }
 
-func createLoggerFromMessage(ctx context.Context, m discordgo.Message) *slog.Logger {
+func CreateLoggerFromMessage(ctx context.Context, s *discordgo.Session, m discordgo.Message) *slog.Logger {
 	username := m.Author.Username
 	if username == "" {
 		username = "Unknown"
@@ -82,18 +78,14 @@ func createLoggerFromMessage(ctx context.Context, m discordgo.Message) *slog.Log
 		With(slog.String("channelID", m.ChannelID)).
 		With(slog.String("guildID", m.GuildID))
 
-	if !IsVerbose() {
-		return logger
-	}
-
-	channel, err := bot.Channel(m.ChannelID, discordgo.WithContext(ctx))
+	channel, err := s.Channel(m.ChannelID, discordgo.WithContext(ctx))
 	if err != nil {
 		logger.DebugContext(ctx, "failed fetch channel", "error", err)
 	} else {
 		logger = logger.With(slog.String("channelName", channel.Name))
 	}
 
-	guild, err := bot.Guild(m.GuildID, discordgo.WithContext(ctx))
+	guild, err := s.Guild(m.GuildID, discordgo.WithContext(ctx))
 	if err != nil {
 		logger.DebugContext(ctx, "failed fetch guild", "error", err)
 	} else {

@@ -1,26 +1,28 @@
-package main
+package discord
 
 import (
 	"context"
 	"errors"
 	"fmt"
 	"github.com/bwmarrin/discordgo"
+	"github.com/wittano/yomoid/logger"
+	"github.com/wittano/yomoid/poll"
 	"log/slog"
 	"strings"
 	"time"
 )
 
-type DiscordSlashCommandHandler interface {
+type SlashCommandHandler interface {
 	HandleSlashCommand(ctx context.Context, l *slog.Logger, s *discordgo.Session, i *discordgo.InteractionCreate) (*discordgo.InteractionResponse, error)
 }
 
-type DiscordMessageErr struct {
+type MessageErr struct {
 	error
 	CommandName string
 	Msg         string
 }
 
-func (e DiscordMessageErr) Error() string {
+func (e MessageErr) Error() string {
 	var msg string
 	if e.error != nil {
 		msg = e.error.Error()
@@ -31,41 +33,41 @@ func (e DiscordMessageErr) Error() string {
 	return fmt.Sprintf("discord slashCommand %s: %s", e.CommandName, msg)
 }
 
-var subCommandMap map[string]DiscordSlashCommandHandler
+var subCommandMap map[string]SlashCommandHandler
 
-func initSlashCommandList(db DatabaseQueries, handler *PollMessageCreateHandler) {
-	subCommandMap = map[string]DiscordSlashCommandHandler{
+func InitSlashCommandList(db poll.Queries, handler *poll.MessageCreateHandler) {
+	subCommandMap = map[string]SlashCommandHandler{
 		"poll": NewPollCommand(db, handler),
 	}
 }
 
-func handleSlashCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+func HandleSlashCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	const slashCommandTimeout = time.Duration(float64(time.Second) * 2)
 	ctx, cancel := context.WithTimeout(context.Background(), slashCommandTimeout)
 	defer cancel()
 
-	logger := createLoggerFromInteraction(ctx, *i.Interaction).
+	l := logger.NewLoggerFromInteraction(ctx, s, *i.Interaction).
 		With("commandName", i.ApplicationCommandData().Name)
 
 	handler, ok := subCommandMap[i.ApplicationCommandData().Name]
 	if !ok {
-		logger.WarnContext(ctx, "unknown slash command")
+		l.WarnContext(ctx, "unknown slash command")
 		return
 	}
 
-	logger.InfoContext(ctx, "slash command handler received a new command")
+	l.InfoContext(ctx, "slash command handler received a new command")
 
-	res, err := handler.HandleSlashCommand(ctx, logger, s, i)
+	res, err := handler.HandleSlashCommand(ctx, l, s, i)
 	if err != nil {
 		var (
-			discordErr DiscordMessageErr
+			discordErr MessageErr
 			content    = "Unexpected internal error. Try again later"
 		)
 		if errors.As(err, &discordErr) {
 			content = discordErr.Msg
 		}
 
-		logger.ErrorContext(ctx, "unexpected failed handle slash command", "error", err)
+		l.ErrorContext(ctx, "unexpected failed handle slash command", "error", err)
 		res = &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
 			Data: &discordgo.InteractionResponseData{
@@ -76,9 +78,9 @@ func handleSlashCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	}
 
 	if err = s.InteractionRespond(i.Interaction, res); err != nil {
-		logger.ErrorContext(ctx, "failed send interaction respond to slash command", "error", err)
+		l.ErrorContext(ctx, "failed send interaction respond to slash command", "error", err)
 	} else {
-		logger.Info("response for interaction")
+		l.Info("response for interaction")
 	}
 }
 

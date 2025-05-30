@@ -1,4 +1,5 @@
 staticcheck:
+	go mod tidy
 	go tool govulncheck ./...
 	go tool staticcheck ./...
 	go vet ./...
@@ -6,11 +7,11 @@ staticcheck:
 sqlc:
 	go tool sqlc -f ./database/sqlc.yml generate
 
-build: sqlc staticcheck
-	go build -o bin/yomoid main.go
+build: tests
+	go build -o bin/yomoid cmd/yomoid/main.go
 
 tests: sqlc staticcheck
 	go test ./...
 
-run: sqlc staticcheck
-	go run main.go --verbose --level DEBUG
+run: tests
+	go run cmd/yomoid/main.go --level DEBUG

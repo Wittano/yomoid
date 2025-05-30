@@ -1,8 +1,9 @@
-package main
+package ningegag
 
 import (
 	"context"
 	"github.com/bwmarrin/discordgo"
+	"github.com/wittano/yomoid/logger"
 	"regexp"
 	"strings"
 )
@@ -12,15 +13,15 @@ var (
 	fixNineGagRegex = regexp.MustCompile(`_460sv([a-z0-9]{3})`)
 )
 
-func nineGagMessageFixer(s *discordgo.Session, m *discordgo.MessageCreate) {
+func MessageFixer(s *discordgo.Session, m *discordgo.MessageCreate) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	logger := createLoggerFromMessage(ctx, *m.Message)
+	l := logger.CreateLoggerFromMessage(ctx, s, *m.Message)
 
 	words := strings.Split(m.Message.Content, " ")
 	if len(words) == 0 && hasNineGagLink(words) {
-		logger.WarnContext(ctx, "missing links from 9gag's form to fixing")
+		l.WarnContext(ctx, "missing links from 9gag's form to fixing")
 		return
 	}
 
@@ -43,7 +44,7 @@ func nineGagMessageFixer(s *discordgo.Session, m *discordgo.MessageCreate) {
 			},
 		}, discordgo.WithContext(ctx))
 		if err != nil {
-			logger.Error("failed send 9gag fixed links message", "error", err)
+			l.Error("failed send 9gag fixed links message", "error", err)
 		}
 	}
 }

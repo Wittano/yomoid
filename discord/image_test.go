@@ -1,7 +1,8 @@
-package main
+package discord
 
 import (
 	"context"
+	"github.com/wittano/yomoid/logger"
 	"os"
 	"testing"
 	"time"
@@ -12,7 +13,7 @@ func TestDownloadImageAndSearchMainColor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer img.Close()
+	defer logger.LogCloser(img)
 
 	got, err := imageMainColor(context.Background(), img)
 	if err != nil {
@@ -38,7 +39,7 @@ func TestImageMainColor(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer f.Close()
+			defer logger.LogCloser(f)
 
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 			defer cancel()

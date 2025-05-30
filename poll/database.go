@@ -1,4 +1,4 @@
-package main
+package poll
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"os"
 )
 
-type Poll struct {
+type Model struct {
 	ID        int64
 	Question  string
 	GuildID   string
@@ -22,9 +22,9 @@ type Poll struct {
 	Options   []string
 }
 
-type DatabaseQueries interface {
-	FindPoll(ctx context.Context, guildID string, id int64, title string) (Poll, error)
-	FindAllPoll(ctx context.Context, guildID string, title string, page uint) ([]Poll, error)
+type Queries interface {
+	FindPoll(ctx context.Context, guildID string, id int64, title string) (Model, error)
+	FindAllPoll(ctx context.Context, guildID string, title string, page uint) ([]Model, error)
 	CreatePoll(ctx context.Context, params CreatePollParams) (int64, error)
 	DeletePoll(ctx context.Context, id int64) error
 	Exists(ctx context.Context, question, guildID string) bool
@@ -58,14 +58,14 @@ func (d Database) DeletePoll(ctx context.Context, id int64) error {
 
 }
 
-func (d Database) FindAllPoll(ctx context.Context, guildID string, title string, page uint) ([]Poll, error) {
+func (d Database) FindAllPoll(ctx context.Context, guildID string, title string, page uint) ([]Model, error) {
 	q := database.New(d.poll)
 	data, err := q.FindPollByQuestion(ctx, database.FindPollByQuestionParams{Column1: title, GuildID: guildID, Offset: int32(page * 10)})
 	if err != nil {
 		return nil, err
 	}
 
-	polls := make([]Poll, len(data))
+	polls := make([]Model, len(data))
 	for i, p := range data {
 		select {
 		case <-ctx.Done():
@@ -81,14 +81,14 @@ func (d Database) FindAllPoll(ctx context.Context, guildID string, title string,
 
 var ErrPollNotFound = errors.New("database: poll not found")
 
-func (d Database) FindPoll(ctx context.Context, guildID string, id int64, title string) (poll Poll, err error) {
+func (d Database) FindPoll(ctx context.Context, guildID string, id int64, title string) (poll Model, err error) {
 	if id > 0 && title != "" {
 		var p database.FindPollByIdAndQuestionRow
 		p, err = database.New(d.poll).FindPollByIdAndQuestion(ctx, database.FindPollByIdAndQuestionParams{Column1: title, ID: id, GuildID: guildID})
 		if err != nil {
 			return
 		}
-		poll = Poll{
+		poll = Model{
 			ID:        p.ID,
 			Question:  p.Question,
 			GuildID:   p.GuildID,
@@ -104,7 +104,7 @@ func (d Database) FindPoll(ctx context.Context, guildID string, id int64, title 
 		if err != nil {
 			return
 		}
-		poll = Poll{
+		poll = Model{
 			ID:        p.ID,
 			Question:  p.Question,
 			GuildID:   p.GuildID,
@@ -131,8 +131,8 @@ func (d Database) FindPoll(ctx context.Context, guildID string, id int64, title 
 	return
 }
 
-func createPollData(p database.FindPollByQuestionRow) Poll {
-	return Poll{
+func createPollData(p database.FindPollByQuestionRow) Model {
+	return Model{
 		ID:        p.ID,
 		Question:  p.Question,
 		GuildID:   p.GuildID,

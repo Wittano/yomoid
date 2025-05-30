@@ -20,6 +20,10 @@ func (p PollMessageCreateHandler) Handler(s *discordgo.Session, m *discordgo.Mes
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	if p.db.Exists(ctx, m.Poll.Question.Text, m.GuildID) {
+		return
+	}
+
 	logger := createLoggerFromMessage(ctx, *m.Message).
 		With("pollName", m.Poll.Question.Text)
 

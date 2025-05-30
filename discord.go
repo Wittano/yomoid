@@ -33,9 +33,9 @@ func (e DiscordMessageErr) Error() string {
 
 var subCommandMap map[string]DiscordSlashCommandHandler
 
-func initSlashCommandList(db DatabaseQueries) {
+func initSlashCommandList(db DatabaseQueries, handler *PollMessageCreateHandler) {
 	subCommandMap = map[string]DiscordSlashCommandHandler{
-		"poll": NewPollCommand(db),
+		"poll": NewPollCommand(db, handler),
 	}
 }
 

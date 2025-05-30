@@ -16,6 +16,7 @@ const (
 	pollDetailsCommandName = "details"
 	pollListCommandName    = "list"
 	pollRemoveCommandName  = "remove"
+	pollPostCommandName    = "create"
 )
 
 func (p PollCommand) HandleSlashCommand(ctx context.Context, l *slog.Logger, s *discordgo.Session, i *discordgo.InteractionCreate) (*discordgo.InteractionResponse, error) {
@@ -27,12 +28,102 @@ func (p PollCommand) HandleSlashCommand(ctx context.Context, l *slog.Logger, s *
 	return handler.HandleSlashCommand(ctx, l, s, i)
 }
 
-func NewPollCommand(db DatabaseQueries) PollCommand {
+func NewPollCommand(db DatabaseQueries, handler *PollMessageCreateHandler) PollCommand {
+	if handler == nil {
+		panic("poll: missing poll message create handler")
+	}
+
 	return map[string]DiscordSlashCommandHandler{
 		pollDetailsCommandName: PollDetailsCommand{Db: db},
 		pollListCommandName:    PollListCommand{Db: db},
 		pollRemoveCommandName:  PollRemoveCommand{Db: db},
+		pollPostCommandName:    PollPostCommand{Db: db, PollMessageHandler: handler},
 	}
+}
+
+type PollPostCommand struct {
+	Db                 DatabaseQueries
+	PollMessageHandler *PollMessageCreateHandler
+}
+
+func (p PollPostCommand) HandleSlashCommand(ctx context.Context, l *slog.Logger, s *discordgo.Session, i *discordgo.InteractionCreate) (*discordgo.InteractionResponse, error) {
+	textChannel := i.ApplicationCommandData().Options[0].Options[1].ChannelValue(s)
+	if textChannel == nil {
+		return nil, fmt.Errorf("poll: missing channel argument")
+	}
+
+	pollID := int64(i.ApplicationCommandData().Options[0].Options[0].FloatValue())
+
+	l.InfoContext(ctx, "valid poll post request received", "requestPollID", pollID, "requestChannelID", textChannel.ID)
+
+	poll, err := p.Db.FindPoll(ctx, i.GuildID, pollID, "")
+	if err != nil && !errors.Is(err, context.DeadlineExceeded) {
+		return nil, DiscordMessageErr{
+			error:       err,
+			CommandName: "post",
+			Msg:         "Invalid poll ID",
+		}
+	} else if err != nil {
+		return nil, err
+	}
+
+	l.InfoContext(ctx, "poll found", "pollID", poll.ID, "pollQuestion", poll.Question)
+
+	discordPoll, err := createDiscordPoll(poll)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := s.ChannelMessageSendComplex(textChannel.ID, &discordgo.MessageSend{
+		Poll: &discordPoll,
+	}); err != nil {
+		return nil, err
+	}
+
+	l.InfoContext(ctx, fmt.Sprintf("poll posted on channel #%s(%s)", textChannel.Name, textChannel.ID), "pollID", pollID)
+
+	return &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: fmt.Sprintf("Poll #%d was created here", pollID),
+			Flags:   discordgo.MessageFlagsEphemeral,
+		},
+	}, nil
+}
+
+func createDiscordPoll(p Poll) (dp discordgo.Poll, err error) {
+	answers := make([]discordgo.PollAnswer, len(p.Options))
+	for i, opt := range p.Options {
+		var (
+			text, emoji string
+		)
+		textWithEmoji := strings.Split(opt, "  ")
+		if len(textWithEmoji) == 1 {
+			text = textWithEmoji[1]
+		} else if len(textWithEmoji) == 2 {
+			text = textWithEmoji[1]
+			emoji = textWithEmoji[0]
+		} else {
+			err = errors.New("invalid poll option. Option cannot be empty")
+			return
+		}
+
+		answers[i].Media = &discordgo.PollMedia{
+			Text: text,
+			Emoji: &discordgo.ComponentEmoji{
+				Name: emoji,
+			},
+		}
+	}
+
+	return discordgo.Poll{
+		Question: discordgo.PollMedia{
+			Text: p.Question,
+		},
+		Answers:          answers,
+		AllowMultiselect: p.IsMulti,
+		Duration:         int(p.Duration),
+	}, nil
 }
 
 type PollListCommand struct {
@@ -235,6 +326,28 @@ func CreatePollDetailsCommand() *discordgo.ApplicationCommand {
 						Name:        "id",
 						Required:    true,
 						Description: "Poll's ID",
+					},
+				},
+			},
+			{
+				Type:        discordgo.ApplicationCommandOptionSubCommand,
+				Name:        pollPostCommandName,
+				Description: "Post poll from template",
+				Options: []*discordgo.ApplicationCommandOption{
+					{
+						Type:        discordgo.ApplicationCommandOptionInteger,
+						Name:        "id",
+						Required:    true,
+						Description: "Poll's ID",
+					},
+					{
+						Type: discordgo.ApplicationCommandOptionChannel,
+						Name: "channel",
+						ChannelTypes: []discordgo.ChannelType{
+							discordgo.ChannelTypeGuildText,
+						},
+						Required:    true,
+						Description: "Text channel where post will be posted",
 					},
 				},
 			},

@@ -46,7 +46,7 @@ select p.id,
        p.is_multi,
        p.duration,
        p.created_at,
-       array_agg(concat(po.emoji, ' ', po.answer)) :: text[] as options
+       array_agg(concat(po.emoji, '  ', po.answer)) :: text[] as options
 from poll p
          left join poll_option po on p.id = po.poll_id
 where p.question ilike concat('%', $1 :: text, '%')
@@ -63,3 +63,9 @@ where id = $1;
 delete
 from poll_option
 where poll_id = $1;
+
+-- name: ExistPoll :one
+select true
+from poll
+where question = $1
+  and guild_id = $2;

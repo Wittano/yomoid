@@ -27,10 +27,17 @@ type DatabaseQueries interface {
 	FindAllPoll(ctx context.Context, guildID string, title string, page uint) ([]Poll, error)
 	CreatePoll(ctx context.Context, params CreatePollParams) (int64, error)
 	DeletePoll(ctx context.Context, id int64) error
+	Exists(ctx context.Context, question, guildID string) bool
 }
 
 type Database struct {
 	poll *pgxpool.Pool
+}
+
+func (d Database) Exists(ctx context.Context, question, guildID string) bool {
+	q := database.New(d.poll)
+	result, err := q.ExistPoll(ctx, database.ExistPollParams{Question: question, GuildID: guildID})
+	return result && err == nil
 }
 
 func (d Database) DeletePoll(ctx context.Context, id int64) error {

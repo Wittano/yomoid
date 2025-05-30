@@ -52,9 +52,11 @@ func main() {
 	}
 	defer closeAndLog(bot)
 
-	initSlashCommandList(db)
+	pollHandler := PollMessageCreateHandler{
+		db: db,
+	}
 
-	pollHandler := PollMessageCreateHandler{db}
+	initSlashCommandList(db, &pollHandler)
 
 	bot.AddHandler(nineGagMessageFixer)
 	bot.AddHandler(pollHandler.Handler)

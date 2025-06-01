@@ -111,9 +111,12 @@ func createDiscordPoll(p poll.Model) (dp discordgo.Poll, err error) {
 
 		answers[i].Media = &discordgo.PollMedia{
 			Text: text,
-			Emoji: &discordgo.ComponentEmoji{
+		}
+
+		if emoji != "" && len(emoji) >= 0 {
+			answers[i].Media.Emoji = &discordgo.ComponentEmoji{
 				Name: emoji,
-			},
+			}
 		}
 	}
 

@@ -12,4 +12,8 @@ workdir /app
 
 copy --from=builder /app/* /app
 
+copy --from=builder /etc/ssl/certs /etc/ssl/certs
+
+env GOOSE_DRIVER=postgres
+
 entrypoint ["/app/yomoid"]

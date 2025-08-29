@@ -2,8 +2,9 @@ package logger
 
 import (
 	"context"
-	"github.com/bwmarrin/discordgo"
 	"log/slog"
+
+	"github.com/bwmarrin/discordgo"
 )
 
 var (

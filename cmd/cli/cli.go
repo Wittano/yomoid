@@ -3,11 +3,12 @@ package main
 import (
 	"context"
 	"flag"
+	"log"
+	"time"
+
 	"github.com/bwmarrin/discordgo"
 	"github.com/wittano/yomoid/discord"
 	"github.com/wittano/yomoid/logger"
-	"log"
-	"time"
 )
 
 var (

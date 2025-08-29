@@ -3,10 +3,6 @@ package main
 import (
 	"context"
 	"flag"
-	"github.com/bwmarrin/discordgo"
-	"github.com/wittano/yomoid/discord"
-	"github.com/wittano/yomoid/ningegag"
-	"github.com/wittano/yomoid/poll"
 	"io"
 	"log"
 	"log/slog"
@@ -14,6 +10,11 @@ import (
 	"os/signal"
 	"strings"
 	"time"
+
+	"github.com/bwmarrin/discordgo"
+	"github.com/wittano/yomoid/discord"
+	"github.com/wittano/yomoid/ningegag"
+	"github.com/wittano/yomoid/poll"
 )
 
 func closeAndLog(closer io.Closer) {

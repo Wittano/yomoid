@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/wittano/yomoid"
 	"github.com/wittano/yomoid/gen/database"
-	"os"
 )
 
 type Model struct {
@@ -221,7 +223,7 @@ func NewDatabase(ctx context.Context) (*Database, error) {
 		err = errors.Join(errors.New("database: failed to ping database"), err)
 	}
 
-	return db, err
+	return db, errors.Join(err, yomoid.MigrateDatabase(url))
 }
 
 func ParseString(s string) (p pgtype.Text) {

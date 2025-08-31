@@ -4,6 +4,9 @@ staticcheck:
 	go tool staticcheck ./...
 	go vet ./...
 
+update-prod-commands:
+	go run cmd/cli/cli.go -update -token $(PROD_TOKEN) -appID $(PROD_APP_ID)
+
 sqlc:
 	go tool sqlc -f ./database/sqlc.yml generate
 

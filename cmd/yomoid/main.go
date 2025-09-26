@@ -36,22 +36,19 @@ func main() {
 
 	token, ok := os.LookupEnv("DISCORD_TOKEN")
 	if !ok {
-		slog.Error("Missing required environment variable: DISCORD_TOKEN")
-		os.Exit(1)
+		log.Fatal("Missing required environment variable: DISCORD_TOKEN")
 	}
 
 	ctx, dbCancel := context.WithTimeout(context.Background(), time.Second)
 	defer dbCancel()
 	db, err := poll.NewDatabase(ctx)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed init database", "error", err)
-		os.Exit(1)
+		log.Fatalf("failed init database: %s", err)
 	}
 
 	bot, err = discordgo.New("Bot " + token)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed create discord session", "error", err)
-		os.Exit(1)
+		log.Fatalf("failed create discord session: %s", err)
 	}
 	defer closeAndLog(bot)
 
